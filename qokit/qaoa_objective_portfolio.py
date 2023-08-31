@@ -21,6 +21,8 @@ def get_qaoa_portfolio_objective(
     objective: str = "expectation",
     precomputed_optimal_bitstrings: np.ndarray | None = None,
     simulator: str = "auto",
+    cd: bool = False,
+    ad: bool = True
 ):
     """Return QAOA objective to be minimized
 
@@ -59,7 +61,7 @@ def get_qaoa_portfolio_objective(
         precomputed_energies = reverse_array_index_bit_order(precompute_energies(po_obj, N)).real
 
     if simulator == "qiskit":
-        parameterized_circuit = get_parameterized_qaoa_circuit(po_problem, depth=p, ini=ini, mixer=mixer, T=T)
+        parameterized_circuit = get_parameterized_qaoa_circuit(po_problem, depth=p, ini=ini, mixer=mixer, T=T, cd=cd, ad=ad)
     else:
         parameterized_circuit = None
 

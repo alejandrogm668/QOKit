@@ -62,27 +62,60 @@ def get_mixer_Txy(qc, beta, minus=False, T=None):
     if T is None:
         T = 1
     beta = beta / T
+
+    xy = False
+    xy_angle = 0 
+    if xy:
+        xy_angle = -np.pi/2
+
     for _ in range(int(T)):
         for i in range(0, N - 1, 2):
             # even Exp[-j*angle*(XX+YY)]
             # qc.append(qiskit.circuit.library.XXPlusYYGate(4 * beta), [i, i + 1])
-            qc.append(qiskit.circuit.library.XXPlusYYGate(4 * beta), [N - 2 - i, N - 1 - i])
+            qc.append(qiskit.circuit.library.XXPlusYYGate(4 * beta, xy_angle), [N - 2 - i, N - 1 - i])
         for i in range(1, N - 1, 2):
             # odd Exp[-j*angle*(XX+YY)]
             # qc.append(qiskit.circuit.library.XXPlusYYGate(4 * beta), [i, i + 1])
-            qc.append(qiskit.circuit.library.XXPlusYYGate(4 * beta), [N - 2 - i, N - 1 - i])
+            qc.append(qiskit.circuit.library.XXPlusYYGate(4 * beta, xy_angle), [N - 2 - i, N - 1 - i])
         # last uniary
-        qc.append(qiskit.circuit.library.XXPlusYYGate(4 * beta), [N - 1, 0])
+        qc.append(qiskit.circuit.library.XXPlusYYGate(4 * beta, xy_angle), [N - 1, 0])
     return qc
 
+
+
+def get_cd_term(po_problem, qc, angle, T=None):
+
+    q = po_problem["q"]
+    means = po_problem["means"]
+    cov = po_problem["cov"]
+    N = po_problem["N"]
+
+    for _ in range(int(T)):
+        for i in range(0, N - 1, 2):
+            hi = means[N - 2 - i] - q * np.sum(cov[N - 2 - i, :])
+            hj = means[N - 1 - i] - q * np.sum(cov[N - 1 - i, :])
+            # even Exp[-j*angle*(XX+YY)]
+            # qc.append(qiskit.circuit.library.XXPlusYYGate(4 * beta), [i, i + 1])
+            qc.append(qiskit.circuit.library.XXPlusYYGate(2*(hj-hi) * angle, -np.pi/2), [N - 2 - i, N - 1 - i])
+        for i in range(1, N - 1, 2):
+            hi = means[N - 2 - i] - q * np.sum(cov[N - 2 - i, :])
+            hj = means[N - 1 - i] - q * np.sum(cov[N - 1 - i, :])
+            # odd Exp[-j*angle*(XX+YY)]
+            # qc.append(qiskit.circuit.library.XXPlusYYGate(4 * beta), [i, i + 1])
+            qc.append(qiskit.circuit.library.XXPlusYYGate(2*(hj-hi) * angle, -np.pi/2), [N - 2 - i, N - 1 - i])
+        # last uniary
+        hi = means[N-1] - q * np.sum(cov[N-1, :])
+        hj = means[0] - q * np.sum(cov[0, :])
+        qc.append(qiskit.circuit.library.XXPlusYYGate(2*(hj-hi) * angle, -np.pi/2), [N - 1, 0])
+    return qc
 
 def get_mixer_RX(qc, beta):
     """A layer of RX gates"""
     N = len(qc._qubits)
     for i in range(N):
         qc.rx(2 * beta, i)
-    return qc
-
+    return 
+    
 
 def get_qaoa_circuit(
     po_problem,
@@ -129,7 +162,8 @@ def get_qaoa_circuit(
 
 
 def get_parameterized_qaoa_circuit(
-    po_problem, depth, ini="dicke", mixer="trotter_ring", T=1, ini_state=None, save_state=True, minus=False, return_parameter_vectors: bool = False
+    po_problem, depth, ini="dicke", mixer="trotter_ring", T=1, ini_state=None, save_state=True, minus=False, return_parameter_vectors: bool = False,
+    cd : bool = False, ad : bool = True
 ):
     """
     Put all ingredients together to build up a qaoa circuit parameterized by gamma & beta
@@ -149,17 +183,25 @@ def get_parameterized_qaoa_circuit(
         else:
             raise ValueError("Undefined initial circuit")
 
-    betas = ParameterVector("beta", depth)
-    gammas = ParameterVector("gamma", depth)
+    if ad:
+        betas = ParameterVector("beta", depth)
+        gammas = ParameterVector("gamma", depth)
+    if cd:
+        angles = ParameterVector("angles", depth)
 
     for i in range(depth):
-        circuit = get_cost_circuit(po_problem, circuit, gammas[i])
-        if mixer.lower() == "trotter_ring":
-            circuit = get_mixer_Txy(circuit, betas[i], minus=minus, T=T)  # minus should be false
-        elif mixer.lower() == "rx":
-            circuit = get_mixer_RX(circuit, betas[i])
-        else:
-            raise ValueError("Undefined mixer circuit")
+        if ad:
+            circuit = get_cost_circuit(po_problem, circuit, gammas[i])
+            if mixer.lower() == "trotter_ring":
+                circuit = get_mixer_Txy(circuit, betas[i], minus=minus, T=T)  # minus should be false
+                pass
+            elif mixer.lower() == "rx":
+                pass
+                #circuit = get_mixer_RX(circuit, betas[i])
+            else:
+                raise ValueError("Undefined mixer circuit")
+        if cd:
+            circuit = get_cd_term(po_problem,circuit, angles[i],T=1)
     if save_state is False:
         circuit.measure_all()
     if return_parameter_vectors:
